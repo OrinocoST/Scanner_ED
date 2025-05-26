@@ -1,40 +1,49 @@
-#!/bin/bash
+# Crear un script .sh para desinstalar el entorno gráfico, activar consola autologin,
+# instalar tmux y configurar ~/.bash_profile para lanzar el sistema Scanner_ED
 
-SERVICE_NAME=laser_tmux
-SCRIPT_PATH="/home/pi/Desktop/AssaAbloy_ED/main.py"
-TMUX_SESSION=laser_session
+script = """#!/bin/bash
 
-echo "Configurando servicio con tmux para ejecución persistente de $SCRIPT_PATH..."
+echo "🔧 Configurando Raspberry Pi para entorno embebido sin GUI..."
 
-# Asegurar que tmux esté instalado
+# 1. Desinstalar entorno gráfico
+echo "🧹 Eliminando entorno gráfico innecesario..."
+sudo apt purge --autoremove -y xserver-common lightdm lxde* openbox x11-common raspberrypi-ui-mods lxappearance gpicview lxterminal gvfs* gnome* x11* lightdm*
+
+# 2. Limpiar paquetes residuales
+sudo apt autoremove -y
+sudo apt clean
+
+# 3. Activar autologin en consola
+echo "🔁 Estableciendo arranque en consola con login automático..."
+sudo raspi-config nonint do_boot_behaviour B2
+
+# 4. Instalar tmux si no existe
 if ! command -v tmux &> /dev/null; then
-  echo "Instalando tmux..."
+  echo "📦 Instalando tmux..."
   sudo apt update
   sudo apt install -y tmux
 fi
 
-# Crear el servicio systemd
-sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<EOF
-[Unit]
-Description=Sistema Assa-Abloy con tmux
-After=network.target
+# 5. Configurar ~/.bash_profile para ejecutar el sistema automáticamente
+echo "📝 Configurando ~/.bash_profile..."
+cat <<EOL > ~/.bash_profile
+# Autoejecutar sistema Scanner_ED con tmux al iniciar sesión en consola
+if [ -z "\\$TMUX" ]; then
+  tmux new-session -A -s laser_session 'python3 /home/pi/Desktop/Scanner_ED/main.py'
+fi
+EOL
 
-[Service]
-Type=oneshot
-RemainAfterExit=true
-ExecStart=/usr/bin/tmux new-session -d -s ${TMUX_SESSION} "python3 ${SCRIPT_PATH}"
-ExecStop=/usr/bin/tmux kill-session -t ${TMUX_SESSION}
-User=pi
-WorkingDirectory=/home/pi/Desktop/AssaAbloy_ED
+echo "✅ Configuración completa. Reinicia la Raspberry Pi para aplicar los cambios:"
+echo "   sudo reboot"
+"""
 
-[Install]
-WantedBy=multi-user.target
-EOF
+# Guardar el archivo .sh
+path = "/mnt/data/Start.sh"
+with open(path, "w") as f:
+    f.write(script)
 
-# Recargar systemd y habilitar
-sudo systemctl daemon-reexec
-sudo systemctl daemon-reload
-sudo systemctl enable ${SERVICE_NAME}.service
-sudo systemctl restart ${SERVICE_NAME}.service
+# Hacer ejecutable
+import os
+os.chmod(path, 0o755)
 
-echo "Servicio creado y ejecutándose. Usa 'tmux attach -t ${TMUX_SESSION}' para verlo."
+path
