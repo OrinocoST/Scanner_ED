@@ -1,7 +1,6 @@
-# Crear un script .sh para desinstalar el entorno gráfico, activar consola autologin,
-# instalar tmux y configurar ~/.bash_profile para lanzar el sistema Scanner_ED
+# Añadir la configuración de IP estática al script Start.sh ya existente
 
-script = """#!/bin/bash
+start_sh_ip_static = """#!/bin/bash
 
 echo "🔧 Configurando Raspberry Pi para entorno embebido sin GUI..."
 
@@ -33,17 +32,27 @@ if [ -z "\\$TMUX" ]; then
 fi
 EOL
 
+# 6. Configurar IP estática en eth0
+echo "🌐 Configurando IP estática para eth0..."
+sudo cp /etc/dhcpcd.conf /etc/dhcpcd.conf.bak
+echo '
+interface eth0
+static ip_address=192.168.10.80/24
+static routers=
+static domain_name_servers=
+static domain_search=
+' | sudo tee -a /etc/dhcpcd.conf
+
 echo "✅ Configuración completa. Reinicia la Raspberry Pi para aplicar los cambios:"
 echo "   sudo reboot"
 """
 
-# Guardar el archivo .sh
-path = "/mnt/data/Start.sh"
-with open(path, "w") as f:
-    f.write(script)
+# Guardar como Start.sh
+start_sh_path = "/mnt/data/Start.sh"
+with open(start_sh_path, "w") as f:
+    f.write(start_sh_ip_static)
 
-# Hacer ejecutable
 import os
-os.chmod(path, 0o755)
+os.chmod(start_sh_path, 0o755)
 
-path
+start_sh_path
