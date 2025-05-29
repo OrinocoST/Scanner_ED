@@ -1,8 +1,22 @@
 import socket
 import time
+import sys
+import platform
+
+if not platform.system() == "Windows":
+    import select
 
 IP_LASER = '192.168.10.90'
 PUERTO_LASER = 45678
+
+ocupado = False
+ultimo_codigo = ""
+hora_ultimo_codigo = 0
+ventana_antirrep = 2
+falhas_consecutivas = 0
+FALHAS_LIMITE = 5
+PAUSA_APOS_FALHAS = 30
+SISTEMA_WINDOWS = platform.system() == "Windows"
 
 def enviar_comando(comando, tentativas=3):
     for intento in range(tentativas):
@@ -39,31 +53,94 @@ def esperar_estado_idle(timeout=5):
     return False
 
 def marcar_documento(nome):
-    doc = nome.strip() + ".bpd"
+    global ocupado, falhas_consecutivas
+    ocupado = True
 
+    doc = nome.strip() + ".bpd"
     print("[INFO] Verificando estado do laser...")
+
     estado = obter_estado_laser()
+    if estado == -1:
+        print("[ERRO] Não foi possível obter o estado do laser. Abortando.")
+        falhas_consecutivas += 1
+        ocupado = False
+        return
 
     if estado == 2:
         print("[AÇÃO] Laser está marcando. Enviando StopMark...")
         enviar_comando("StopMark;;")
-        esperar_estado_idle()
+        if not esperar_estado_idle():
+            print("[ERRO] Timeout após StopMark. Abortando.")
+            falhas_consecutivas += 1
+            ocupado = False
+            return
 
     print(f"[AÇÃO] Abrindo documento: {doc}")
-    enviar_comando(f"OpenDoc,{doc};;")
-    esperar_estado_idle()
+    if enviar_comando(f"OpenDoc,{doc};;") == "":
+        print("[ERRO] Falha ao abrir documento. Abortando.")
+        falhas_consecutivas += 1
+        ocupado = False
+        return
+
+    if not esperar_estado_idle():
+        print("[ERRO] Timeout após abrir documento. Abortando.")
+        falhas_consecutivas += 1
+        ocupado = False
+        return
 
     print("[AÇÃO] Iniciando marcação...")
-    enviar_comando("StartMark;;")
+    if enviar_comando("StartMark;;") == "":
+        print("[ERRO] Falha ao iniciar marcação. Abortando.")
+        falhas_consecutivas += 1
+        ocupado = False
+        return
+
     print("[OK] Marcação concluída.")
+    falhas_consecutivas = 0
+    time.sleep(1)
+    ocupado = False
 
 def ciclo_principal():
-    print("[SISTEMA] Aguardando escaneamento. Pressione Ctrl+C para sair.")
+    global ocupado, ultimo_codigo, hora_ultimo_codigo, falhas_consecutivas
+
+    print("[SISTEMA] Inicializado. Pronto para escanear. Ctrl+C para sair.")
     try:
         while True:
-            entrada = input("Código escaneado: ").strip()
-            if entrada:
-                marcar_documento(entrada)
+            if SISTEMA_WINDOWS:
+                entrada = input("Código escaneado: ").strip()
+            else:
+                if ocupado:
+                    time.sleep(0.1)
+                    continue
+                print("Código escaneado: ", end="", flush=True)
+                rlist, _, _ = select.select([sys.stdin], [], [], 0.5)
+                if not rlist:
+                    continue
+                entrada = sys.stdin.readline().strip()
+
+            agora = time.time()
+
+            if ocupado:
+                print("[IGNORADO] Sistema ocupado. Aguarde o fim da marcação.")
+                continue
+
+            if entrada == "":
+                continue
+
+            if entrada == ultimo_codigo and (agora - hora_ultimo_codigo) < ventana_antirrep:
+                print("[IGNORADO] Código repetido detectado nos últimos 2 segundos.")
+                continue
+
+            ultimo_codigo = entrada
+            hora_ultimo_codigo = agora
+
+            marcar_documento(entrada)
+
+            if falhas_consecutivas >= FALHAS_LIMITE:
+                print(f"[ALERTA] {falhas_consecutivas} falhas seguidas. Aguardando {PAUSA_APOS_FALHAS}s.")
+                time.sleep(PAUSA_APOS_FALHAS)
+                falhas_consecutivas = 0
+
     except KeyboardInterrupt:
         print("\n[SISTEMA] Encerrado pelo usuário.")
 
