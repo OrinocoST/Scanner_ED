@@ -3,7 +3,7 @@ import time
 import sys
 import platform
 
-if not platform.system() == "Windows":
+if platform.system() != "Windows":
     import select
 
 IP_LASER = '192.168.10.90'
@@ -112,10 +112,11 @@ def ciclo_principal():
                 if ocupado:
                     time.sleep(0.1)
                     continue
-                print("Código escaneado: ", end="", flush=True)
-                rlist, _, _ = select.select([sys.stdin], [], [], 0.5)
+                rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
                 if not rlist:
+                    time.sleep(0.05)
                     continue
+                print("Código escaneado: ", end="", flush=True)
                 entrada = sys.stdin.readline().strip()
 
             agora = time.time()
